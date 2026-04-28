@@ -1,40 +1,12 @@
-"""
-led_controller.py
-GrovePi LED and buzzer controller.
-
-Hardware configuration:
-  Green LED  -- D4
-  White LED  -- D3
-  Buzzer     -- D2
-
-LED states:
-  green    patient stable        green ON solid, white OFF
-  yellow   patient deteriorating green OFF, white ON solid
-  red      sepsis alert          both LEDs blinking + buzzer fires once
-                                 then both keep blinking until resolved
-  off      session ended         all off
-
-Transitions:
-  green  -> yellow : green turns off, white turns on
-  yellow -> red    : white stops solid, both start blinking, buzzer fires once
-  red    -> green  : blink stops, green turns on solid (patient recovered)
-  red    -> ack    : blink stops, green turns on solid (clinician acknowledged)
-
-Set REAL_HARDWARE = True when running on the actual RPi with GrovePi.
-Set REAL_HARDWARE = False for laptop stub mode (prints to terminal).
-"""
-
 import time
 import threading
 
-# ── Hardware flag ─────────────────────────────────────────────────────────────
-REAL_HARDWARE = True   # flip to False for laptop-only testing
+REAL_HARDWARE = True
 
 GREEN_PIN  = 4
 WHITE_PIN  = 3
 BUZZER_PIN = 2
 
-# ── GrovePi import ────────────────────────────────────────────────────────────
 if REAL_HARDWARE:
     try:
         import grovepi
@@ -50,10 +22,8 @@ if REAL_HARDWARE:
         print(f"[LED] WARNING -- hardware init failed: {e}, falling back to stub mode")
         REAL_HARDWARE = False
 
-# ── Current state tracking ────────────────────────────────────────────────────
-_current_status = None   # track last applied status to detect transitions
+_current_status = None
 
-# ── Blink thread control ──────────────────────────────────────────────────────
 _blink_thread = None
 _blink_active = False
 _blink_lock   = threading.Lock()
@@ -68,7 +38,6 @@ def _stop_blink():
 
 
 def _blink_loop(pins, interval):
-    """Blink one or more pins simultaneously until stopped."""
     global _blink_active
     state = True
     while True:
@@ -76,10 +45,12 @@ def _blink_loop(pins, interval):
             if not _blink_active:
                 break
         for pin in pins:
-            _write_pin(pin, 1 if state else 0)
+            if state:
+                _write_pin(pin, 1)
+            else:
+                _write_pin(pin, 0)
         state = not state
         time.sleep(interval)
-    # turn off all blink pins when stopped
     for pin in pins:
         _write_pin(pin, 0)
 
@@ -96,8 +67,6 @@ def _start_blink(pins, interval=0.4):
     _blink_thread.start()
 
 
-# ── Low level pin writes ──────────────────────────────────────────────────────
-
 def _write_pin(pin, val):
     if REAL_HARDWARE:
         try:
@@ -105,12 +74,19 @@ def _write_pin(pin, val):
         except Exception as e:
             print(f"[LED] Pin write error D{pin}={val}: {e}")
     else:
-        pin_name = {
-            GREEN_PIN:  "GREEN",
-            WHITE_PIN:  "WHITE",
-            BUZZER_PIN: "BUZZER"
-        }.get(pin, f"D{pin}")
-        print(f"[STUB] {pin_name} -> {'ON' if val else 'OFF'}")
+        if pin == GREEN_PIN:
+            pin_name = "GREEN"
+        elif pin == WHITE_PIN:
+            pin_name = "WHITE"
+        elif pin == BUZZER_PIN:
+            pin_name = "BUZZER"
+        else:
+            pin_name = "D" + str(pin)
+
+        if val:
+            print(f"[STUB] {pin_name} -> ON")
+        else:
+            print(f"[STUB] {pin_name} -> OFF")
 
 
 def _all_off():
@@ -118,8 +94,6 @@ def _all_off():
     _write_pin(WHITE_PIN,  0)
     _write_pin(BUZZER_PIN, 0)
 
-
-# ── Buzzer (fires once, non-blocking) ─────────────────────────────────────────
 
 def _sound_buzzer(duration=3.0):
     print(f"[BUZZER] Firing for {duration}s")
@@ -129,14 +103,7 @@ def _sound_buzzer(duration=3.0):
     print(f"[BUZZER] Off")
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
-
 def set_green():
-    """
-    Patient stable.
-    Green ON solid and stays on until status changes.
-    White turns off.
-    """
     _stop_blink()
     _write_pin(WHITE_PIN, 0)
     _write_pin(GREEN_PIN, 1)
@@ -144,11 +111,6 @@ def set_green():
 
 
 def set_yellow():
-    """
-    Patient deteriorating.
-    White ON solid and stays on until status changes.
-    Green turns off.
-    """
     _stop_blink()
     _write_pin(GREEN_PIN, 0)
     _write_pin(WHITE_PIN, 1)
@@ -156,15 +118,7 @@ def set_yellow():
 
 
 def set_red():
-    """
-    Sepsis alert.
-    Both LEDs start blinking and keep blinking until resolved.
-    Buzzer fires once for 3 seconds then stops.
-    Blinking continues until set_green() or set_blink_amber() is called.
-    """
-    # start continuous blink on both LEDs
     _start_blink([GREEN_PIN, WHITE_PIN], interval=0.4)
-    # buzzer fires once in background, blinking continues independently
     buzzer_thread = threading.Thread(
         target=_sound_buzzer, args=(3.0,), daemon=True
     )
@@ -173,10 +127,6 @@ def set_red():
 
 
 def set_blink_amber():
-    """
-    Alert acknowledged by clinician.
-    Stops blinking, green solid on — patient still elevated but reviewed.
-    """
     _stop_blink()
     _write_pin(WHITE_PIN, 0)
     _write_pin(GREEN_PIN, 1)
@@ -184,22 +134,16 @@ def set_blink_amber():
 
 
 def set_off():
-    """Session ended — turn everything off."""
     _stop_blink()
     _all_off()
     print("[STATUS] OFF")
 
 
 def apply_status(status):
-    """
-    Main entry point called by alert_handler.py.
-    Only applies a new state if status has actually changed —
-    avoids flickering LEDs on every repeated message.
-    """
     global _current_status
 
     if status == _current_status:
-        return  # no change, do nothing
+        return
 
     _current_status = status
 
@@ -212,8 +156,6 @@ def apply_status(status):
     else:
         set_off()
 
-
-# ── Quick test ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("=== LED Controller Test ===")

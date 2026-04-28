@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ICU Watch Monitor</title>
   <style>
-    /* ── Reset & base ──────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -36,7 +35,6 @@
       min-height: 100vh;
     }
 
-    /* ── Layout ────────────────────────────────────────────────── */
     .header {
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
@@ -73,7 +71,6 @@
       gap: 16px;
     }
 
-    /* ── Cards ─────────────────────────────────────────────────── */
     .card {
       background: var(--bg2);
       border: 1px solid var(--border);
@@ -90,7 +87,6 @@
       margin-bottom: 12px;
     }
 
-    /* ── Badges ─────────────────────────────────────────────────── */
     .badge {
       display: inline-flex;
       align-items: center;
@@ -122,7 +118,6 @@
       50%       { opacity: 0.3; }
     }
 
-    /* ── Alert banner ───────────────────────────────────────────── */
     #alert-banner {
       border-radius: var(--radius);
       padding: 14px 20px;
@@ -173,7 +168,6 @@
     .btn-amber  { background: transparent; border-color: var(--amber); color: var(--amber); }
     .btn-blue   { background: var(--blue); border-color: var(--blue);  color: #000; }
 
-    /* ── Vitals grid ────────────────────────────────────────────── */
     .vitals-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -212,14 +206,12 @@
       margin-top: 6px;
     }
 
-    /* ── Two column row ─────────────────────────────────────────── */
     .two-col {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
     }
 
-    /* ── SOFA bars ──────────────────────────────────────────────── */
     .sofa-row {
       display: flex;
       align-items: center;
@@ -270,7 +262,6 @@
     .sofa-total-label { font-size: 13px; color: var(--muted); }
     .sofa-total-val   { font-size: 22px; font-weight: 600; }
 
-    /* ── Override panel ─────────────────────────────────────────── */
     .override-row {
       display: flex;
       align-items: center;
@@ -307,7 +298,6 @@
       margin-top: 6px;
     }
 
-    /* ── Alert log ──────────────────────────────────────────────── */
     .log-row {
       display: flex;
       align-items: center;
@@ -324,7 +314,6 @@
     .log-msg   { flex: 1; }
     .log-empty { color: var(--muted); font-size: 12px; }
 
-    /* ── Waiting state ──────────────────────────────────────────── */
     .waiting {
       text-align: center;
       padding: 40px 0;
@@ -334,7 +323,6 @@
     .waiting h2 { font-size: 16px; margin-bottom: 6px; color: var(--text); }
     .waiting p  { font-size: 13px; }
 
-    /* ── Trend chart ────────────────────────────────────────────── */
     .chart-wrap {
       height: 80px;
       display: flex;
@@ -353,7 +341,6 @@
 </head>
 <body>
 
-<!-- ── Header ──────────────────────────────────────────────────────────── -->
 <div class="header">
   <div class="header-left">
     <h1>ICU Watch Monitor</h1>
@@ -367,19 +354,15 @@
   </div>
 </div>
 
-<!-- ── Main content ─────────────────────────────────────────────────────── -->
 <div class="main">
 
-  <!-- Waiting state (shown before session starts) -->
   <div id="waiting-state" class="waiting">
     <h2>Waiting for patient stream</h2>
     <p>Start replay.py on the Raspberry Pi to begin monitoring</p>
   </div>
 
-  <!-- Active session content (hidden until data arrives) -->
   <div id="active-state" style="display:none; display:flex; flex-direction:column; gap:16px;">
 
-    <!-- Alert banner -->
     <div id="alert-banner">
       <div>
         <div class="alert-title" id="alert-title">SEPSIS ALERT</div>
@@ -390,7 +373,6 @@
       </button>
     </div>
 
-    <!-- Vitals cards -->
     <div class="vitals-grid">
       <div class="vital-card">
         <div class="vital-label">Heart rate</div>
@@ -414,10 +396,8 @@
       </div>
     </div>
 
-    <!-- SOFA + Override -->
     <div class="two-col">
 
-      <!-- SOFA breakdown -->
       <div class="card">
         <div class="card-title">SOFA score breakdown</div>
         <div class="sofa-row">
@@ -446,7 +426,6 @@
         </div>
       </div>
 
-      <!-- Manual override -->
       <div class="card">
         <div class="card-title">Manual vital override</div>
         <div class="override-row">
@@ -481,13 +460,11 @@
 
     </div>
 
-    <!-- SOFA trend chart -->
     <div class="card">
       <div class="card-title">SOFA score trend</div>
       <div class="chart-wrap" id="sofa-chart"></div>
     </div>
 
-    <!-- Alert log -->
     <div class="card">
       <div class="card-title">Alert log</div>
       <div id="alert-log"><div class="log-empty">No alerts yet</div></div>
@@ -497,69 +474,88 @@
 </div>
 
 <script>
-  // ── State ──────────────────────────────────────────────────────────────────
   let alertLog    = [];
   let lastStatus  = null;
   let sessionSeen = false;
 
-  // ── Polling ────────────────────────────────────────────────────────────────
   async function poll() {
     try {
-      const res  = await fetch("/api/state");
-      const data = await res.json();
+      let res  = await fetch("/api/state");
+      let data = await res.json();
       render(data);
     } catch (e) {
-      // server not ready yet — stay in waiting state
+      // server not ready yet
     }
   }
 
   setInterval(poll, 2000);
   poll();
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   function render(data) {
-    const active = data.session_active || (data.latest_vitals && Object.keys(data.latest_vitals).length > 0);
+    let active = false;
+    if (data.session_active) {
+      active = true;
+    } else if (data.latest_vitals) {
+      if (Object.keys(data.latest_vitals).length > 0) {
+        active = true;
+      }
+    }
 
     document.getElementById("waiting-state").style.display = active ? "none"  : "block";
     document.getElementById("active-state").style.display  = active ? "flex"  : "none";
 
-    if (!active) return;
+    if (!active) {
+      return;
+    }
 
-    const v     = data.latest_vitals  || {};
-    const sofa  = data.latest_sofa    || {};
-    const trend = data.latest_trend   || {};
-    const status = trend.status || "green";
+    let v = data.latest_vitals;
+    if (!v) { v = {}; }
+    let sofa = data.latest_sofa;
+    if (!sofa) { sofa = {}; }
+    let trend = data.latest_trend;
+    if (!trend) { trend = {}; }
+    let status = trend.status;
+    if (!status) { status = "green"; }
 
-    // header
+    let patientId = "--";
+    if (data.patient_id) {
+      patientId = data.patient_id;
+    }
+    let readingCount = "--";
+    if (data.history) {
+      readingCount = data.history.length;
+    }
     document.getElementById("header-sub").textContent =
-      `Patient ${data.patient_id || "--"}  ·  Reading ${data.history?.length || "--"}  ·  ${new Date().toLocaleTimeString()}`;
+      "Patient " + patientId + "  ·  Reading " + readingCount + "  ·  " + new Date().toLocaleTimeString();
 
-    // status badge
     updateBadge(status, data.acknowledged);
-
-    // alert banner
     updateAlertBanner(status, data.acknowledged, sofa, trend);
 
-    // vitals
     setVital("v-hr",   v.heart_rate, "bpm",  "s-hr",   hrStatus(v.heart_rate));
     setVital("v-rr",   v.resp_rate,  "/min", "s-rr",   rrStatus(v.resp_rate));
-    setVital("v-bp",   v.sbp ? `${Math.round(v.sbp)}/${Math.round(v.dbp)}` : "--", "mmHg", "s-bp", bpStatus(v.sbp));
-    setVital("v-spo2", v.spo2,       "%",    "s-spo2", spo2Status(v.spo2));
 
-    // SOFA bars
+    let bpDisplay;
+    if (v.sbp) {
+      bpDisplay = Math.round(v.sbp) + "/" + Math.round(v.dbp);
+    } else {
+      bpDisplay = "--";
+    }
+    setVital("v-bp",   bpDisplay, "mmHg", "s-bp",   bpStatus(v.sbp));
+    setVital("v-spo2", v.spo2,    "%",    "s-spo2", spo2Status(v.spo2));
+
     updateSofaBars(sofa, trend);
 
-    // chart
-    updateChart(data.history || []);
+    let history = data.history;
+    if (!history) { history = []; }
+    updateChart(history);
 
-    // alert log — only add on new red trigger
     if (status === "red" && lastStatus !== "red" && !data.acknowledged) {
-      alertLog.unshift({
-        time:    new Date().toLocaleTimeString(),
-        msg:     `Sepsis alert — SOFA ${sofa.total} (delta +${trend.delta})`,
-        status:  "red",
-        acked:   false,
-      });
+      let newAlert = {};
+      newAlert.time   = new Date().toLocaleTimeString();
+      newAlert.msg    = "Sepsis alert — SOFA " + sofa.total + " (delta +" + trend.delta + ")";
+      newAlert.status = "red";
+      newAlert.acked  = false;
+      alertLog.unshift(newAlert);
       renderLog();
     }
 
@@ -571,194 +567,249 @@
     lastStatus = status;
   }
 
-  // ── Vitals helpers ──────────────────────────────────────────────────────────
   function setVital(valId, val, unit, statusId, statusInfo) {
-    const el = document.getElementById(valId);
+    let el = document.getElementById(valId);
     if (val === null || val === undefined) {
-      el.innerHTML = `--<span class="vital-unit">${unit}</span>`;
+      el.innerHTML = '--<span class="vital-unit">' + unit + '</span>';
     } else if (typeof val === "string" && val.includes("/")) {
-      el.innerHTML = `${val}<span class="vital-unit">${unit}</span>`;
+      el.innerHTML = val + '<span class="vital-unit">' + unit + '</span>';
     } else {
-      el.innerHTML = `${Math.round(val)}<span class="vital-unit">${unit}</span>`;
+      el.innerHTML = Math.round(val) + '<span class="vital-unit">' + unit + '</span>';
     }
-    const sEl = document.getElementById(statusId);
+    let sEl = document.getElementById(statusId);
     sEl.textContent = statusInfo.label;
     sEl.style.color = statusInfo.color;
   }
 
-  function hrStatus(v)   {
-    if (!v) return {label:"",color:"var(--muted)"};
-    if (v > 120) return {label:"high",    color:"var(--red)"};
-    if (v > 100) return {label:"elevated",color:"var(--yellow)"};
-    if (v < 50)  return {label:"low",     color:"var(--red)"};
-    return {label:"normal", color:"var(--green)"};
+  function hrStatus(v) {
+    if (!v) { return {label: "", color: "var(--muted)"}; }
+    if (v > 120) { return {label: "high",     color: "var(--red)"}; }
+    if (v > 100) { return {label: "elevated", color: "var(--yellow)"}; }
+    if (v < 50)  { return {label: "low",      color: "var(--red)"}; }
+    return {label: "normal", color: "var(--green)"};
   }
 
-  function rrStatus(v)   {
-    if (!v) return {label:"",color:"var(--muted)"};
-    if (v > 25) return {label:"high",    color:"var(--red)"};
-    if (v > 20) return {label:"elevated",color:"var(--yellow)"};
-    return {label:"normal", color:"var(--green)"};
+  function rrStatus(v) {
+    if (!v) { return {label: "", color: "var(--muted)"}; }
+    if (v > 25) { return {label: "high",     color: "var(--red)"}; }
+    if (v > 20) { return {label: "elevated", color: "var(--yellow)"}; }
+    return {label: "normal", color: "var(--green)"};
   }
 
-  function bpStatus(v)   {
-    if (!v) return {label:"",color:"var(--muted)"};
-    if (v < 80)  return {label:"critically low",color:"var(--red)"};
-    if (v < 90)  return {label:"low",            color:"var(--yellow)"};
-    if (v > 160) return {label:"high",            color:"var(--yellow)"};
-    return {label:"normal", color:"var(--green)"};
+  function bpStatus(v) {
+    if (!v) { return {label: "", color: "var(--muted)"}; }
+    if (v < 80)  { return {label: "critically low", color: "var(--red)"}; }
+    if (v < 90)  { return {label: "low",            color: "var(--yellow)"}; }
+    if (v > 160) { return {label: "high",            color: "var(--yellow)"}; }
+    return {label: "normal", color: "var(--green)"};
   }
 
   function spo2Status(v) {
-    if (!v) return {label:"",color:"var(--muted)"};
-    if (v < 90) return {label:"critical", color:"var(--red)"};
-    if (v < 94) return {label:"low",      color:"var(--yellow)"};
-    return {label:"normal", color:"var(--green)"};
+    if (!v) { return {label: "", color: "var(--muted)"}; }
+    if (v < 90) { return {label: "critical", color: "var(--red)"}; }
+    if (v < 94) { return {label: "low",      color: "var(--yellow)"}; }
+    return {label: "normal", color: "var(--green)"};
   }
 
-  // ── SOFA bars ───────────────────────────────────────────────────────────────
+  function getBarColor(score) {
+    if (score >= 3) { return "var(--red)"; }
+    if (score >= 2) { return "var(--yellow)"; }
+    if (score >= 1) { return "var(--amber)"; }
+    return "var(--green)";
+  }
+
+  function updateOneBar(id, score) {
+    let pct   = (score / 4) * 100;
+    let color = getBarColor(score);
+    document.getElementById("bar-" + id).style.width      = pct + "%";
+    document.getElementById("bar-" + id).style.background = color;
+    document.getElementById("num-" + id).textContent      = score;
+    document.getElementById("num-" + id).style.color      = color;
+  }
+
   function updateSofaBars(sofa, trend) {
-    const bars = [
-      ["resp",   sofa.respiration,    "respiration"],
-      ["cardio", sofa.cardiovascular, "cardiovascular"],
-      ["renal",  sofa.renal,          "renal"],
-      ["cns",    sofa.cns_proxy,      "cns_proxy"],
-    ];
+    updateOneBar("resp",   sofa.respiration    || 0);
+    updateOneBar("cardio", sofa.cardiovascular || 0);
+    updateOneBar("renal",  sofa.renal          || 0);
+    updateOneBar("cns",    sofa.cns_proxy      || 0);
 
-    bars.forEach(([id, score]) => {
-      const pct   = (score / 4) * 100;
-      const color = score >= 3 ? "var(--red)" : score >= 2 ? "var(--yellow)" : score >= 1 ? "var(--amber)" : "var(--green)";
-      document.getElementById(`bar-${id}`).style.width      = `${pct}%`;
-      document.getElementById(`bar-${id}`).style.background = color;
-      document.getElementById(`num-${id}`).textContent      = score ?? 0;
-      document.getElementById(`num-${id}`).style.color      = color;
-    });
+    let total = sofa.total || 0;
+    let delta = trend.delta || 0;
+    let base  = trend.baseline || "--";
 
-    const total   = sofa.total ?? 0;
-    const delta   = trend.delta ?? 0;
-    const base    = trend.baseline ?? "--";
-    const tColor  = total >= 6 ? "var(--red)" : total >= 3 ? "var(--yellow)" : "var(--green)";
+    let tColor;
+    if (total >= 6) {
+      tColor = "var(--red)";
+    } else if (total >= 3) {
+      tColor = "var(--yellow)";
+    } else {
+      tColor = "var(--green)";
+    }
 
-    document.getElementById("sofa-total").textContent  = total;
-    document.getElementById("sofa-total").style.color  = tColor;
-    document.getElementById("sofa-delta-label").textContent =
-      base !== "--" ? `baseline ${base}  ·  delta ${delta >= 0 ? "+" : ""}${delta}` : "establishing baseline...";
+    document.getElementById("sofa-total").textContent = total;
+    document.getElementById("sofa-total").style.color = tColor;
+
+    let deltaLabel;
+    if (base !== "--") {
+      let deltaSign = "";
+      if (delta >= 0) {
+        deltaSign = "+";
+      }
+      deltaLabel = "baseline " + base + "  ·  delta " + deltaSign + delta;
+    } else {
+      deltaLabel = "establishing baseline...";
+    }
+    document.getElementById("sofa-delta-label").textContent = deltaLabel;
   }
 
-  // ── Badge ───────────────────────────────────────────────────────────────────
   function updateBadge(status, acked) {
-    const el  = document.getElementById("status-badge");
+    let el = document.getElementById("status-badge");
     if (acked) {
       el.className = "badge badge-yellow";
-      el.innerHTML = `<span class="badge-dot dot-yellow"></span> Acknowledged`;
+      el.innerHTML = '<span class="badge-dot dot-yellow"></span> Acknowledged';
     } else if (status === "red") {
       el.className = "badge badge-red";
-      el.innerHTML = `<span class="badge-dot dot-red"></span> Sepsis Alert`;
+      el.innerHTML = '<span class="badge-dot dot-red"></span> Sepsis Alert';
     } else if (status === "yellow") {
       el.className = "badge badge-yellow";
-      el.innerHTML = `<span class="badge-dot dot-yellow"></span> Deteriorating`;
+      el.innerHTML = '<span class="badge-dot dot-yellow"></span> Deteriorating';
     } else {
       el.className = "badge badge-green";
-      el.innerHTML = `<span class="badge-dot dot-green"></span> Stable`;
+      el.innerHTML = '<span class="badge-dot dot-green"></span> Stable';
     }
   }
 
-  // ── Alert banner ────────────────────────────────────────────────────────────
   function updateAlertBanner(status, acked, sofa, trend) {
-    const banner = document.getElementById("alert-banner");
-    const btn    = document.getElementById("ack-btn");
+    let banner = document.getElementById("alert-banner");
+    let btn    = document.getElementById("ack-btn");
 
     if (acked) {
       banner.className = "amber";
       document.getElementById("alert-title").style.color = "var(--amber)";
       document.getElementById("alert-title").textContent = "Alert Acknowledged";
-      document.getElementById("alert-sub").textContent   = `SOFA ${sofa.total} · RPi buzzer silenced · LED blinking amber`;
-      btn.textContent  = "Acknowledged";
-      btn.disabled     = true;
-      btn.className    = "btn btn-amber";
+      document.getElementById("alert-sub").textContent   = "SOFA " + sofa.total + " · RPi buzzer silenced · LED blinking amber";
+      btn.textContent = "Acknowledged";
+      btn.disabled    = true;
+      btn.className   = "btn btn-amber";
     } else if (status === "red") {
       banner.className = "red";
       document.getElementById("alert-title").style.color = "var(--red)";
       document.getElementById("alert-title").textContent = "SEPSIS ALERT";
-      document.getElementById("alert-sub").textContent   =
-        `SOFA ${sofa.total} · delta +${trend.delta} · threshold exceeded`;
-      btn.textContent  = "Acknowledge";
-      btn.disabled     = false;
-      btn.className    = "btn btn-red";
+      document.getElementById("alert-sub").textContent   = "SOFA " + sofa.total + " · delta +" + trend.delta + " · threshold exceeded";
+      btn.textContent = "Acknowledge";
+      btn.disabled    = false;
+      btn.className   = "btn btn-red";
     } else {
       banner.className = "";
     }
   }
 
-  // ── Trend chart ─────────────────────────────────────────────────────────────
   function updateChart(history) {
-    const wrap   = document.getElementById("sofa-chart");
+    let wrap = document.getElementById("sofa-chart");
     wrap.innerHTML = "";
-    if (!history.length) return;
-
-    const maxVal = Math.max(...history.map(h => h.sofa_total), 4);
-
-    history.forEach(h => {
-      const pct   = Math.max(4, (h.sofa_total / maxVal) * 100);
-      const color = h.status === "red" ? "var(--red)" : h.status === "yellow" ? "var(--yellow)" : "var(--green)";
-      const bar   = document.createElement("div");
-      bar.className = "chart-bar";
-      bar.style.height     = `${pct}%`;
-      bar.style.background = color;
-      bar.title            = `Reading ${h.reading_num}: SOFA ${h.sofa_total}`;
-      wrap.appendChild(bar);
-    });
-  }
-
-  // ── Alert log ───────────────────────────────────────────────────────────────
-  function renderLog() {
-    const el = document.getElementById("alert-log");
-    if (!alertLog.length) {
-      el.innerHTML = `<div class="log-empty">No alerts yet</div>`;
+    if (history.length === 0) {
       return;
     }
-    el.innerHTML = alertLog.map(a => `
-      <div class="log-row">
-        <span class="log-time">${a.time}</span>
-        <span class="log-msg" style="color:${a.status === 'red' ? 'var(--red)' : 'var(--muted)'}">${a.msg}</span>
-        <span class="badge ${a.acked ? 'badge-muted' : 'badge-red'}">${a.acked ? 'acknowledged' : 'active'}</span>
-      </div>
-    `).join("");
+
+    let maxVal = 4;
+    for (let i = 0; i < history.length; i++) {
+      if (history[i].sofa_total > maxVal) {
+        maxVal = history[i].sofa_total;
+      }
+    }
+
+    for (let i = 0; i < history.length; i++) {
+      let h   = history[i];
+      let pct = (h.sofa_total / maxVal) * 100;
+      if (pct < 4) {
+        pct = 4;
+      }
+
+      let color;
+      if (h.status === "red") {
+        color = "var(--red)";
+      } else if (h.status === "yellow") {
+        color = "var(--yellow)";
+      } else {
+        color = "var(--green)";
+      }
+
+      let bar = document.createElement("div");
+      bar.className        = "chart-bar";
+      bar.style.height     = pct + "%";
+      bar.style.background = color;
+      bar.title            = "Reading " + h.reading_num + ": SOFA " + h.sofa_total;
+      wrap.appendChild(bar);
+    }
   }
 
-  // ── Override ────────────────────────────────────────────────────────────────
-  async function injectOverride() {
-    const patch = {
-      spo2:       parseFloat(document.getElementById("sl-spo2").value),
-      heart_rate: parseFloat(document.getElementById("sl-hr").value),
-      resp_rate:  parseFloat(document.getElementById("sl-rr").value),
-      sbp:        parseFloat(document.getElementById("sl-sbp").value),
-    };
+  function renderLog() {
+    let el = document.getElementById("alert-log");
+    if (alertLog.length === 0) {
+      el.innerHTML = '<div class="log-empty">No alerts yet</div>';
+      return;
+    }
 
-    const statusEl = document.getElementById("inject-status");
+    let html = "";
+    for (let i = 0; i < alertLog.length; i++) {
+      let a = alertLog[i];
+
+      let msgColor;
+      if (a.status === "red") {
+        msgColor = "var(--red)";
+      } else {
+        msgColor = "var(--muted)";
+      }
+
+      let badgeClass;
+      let badgeText;
+      if (a.acked) {
+        badgeClass = "badge-muted";
+        badgeText  = "acknowledged";
+      } else {
+        badgeClass = "badge-red";
+        badgeText  = "active";
+      }
+
+      html = html + '<div class="log-row">';
+      html = html + '<span class="log-time">' + a.time + '</span>';
+      html = html + '<span class="log-msg" style="color:' + msgColor + '">' + a.msg + '</span>';
+      html = html + '<span class="badge ' + badgeClass + '">' + badgeText + '</span>';
+      html = html + '</div>';
+    }
+    el.innerHTML = html;
+  }
+
+  async function injectOverride() {
+    let patch = {};
+    patch.spo2       = parseFloat(document.getElementById("sl-spo2").value);
+    patch.heart_rate = parseFloat(document.getElementById("sl-hr").value);
+    patch.resp_rate  = parseFloat(document.getElementById("sl-rr").value);
+    patch.sbp        = parseFloat(document.getElementById("sl-sbp").value);
+
+    let statusEl = document.getElementById("inject-status");
 
     try {
-      const res = await fetch("/api/override", {
+      let res = await fetch("/api/override", {
         method:  "POST",
         headers: {"Content-Type": "application/json"},
         body:    JSON.stringify(patch),
       });
-      const data = await res.json();
-      statusEl.style.color   = "var(--green)";
-      statusEl.textContent   = "Override queued — applies on next reading";
-      setTimeout(() => statusEl.textContent = "", 3000);
+      let data = await res.json();
+      statusEl.style.color = "var(--green)";
+      statusEl.textContent = "Override queued — applies on next reading";
+      setTimeout(function() { statusEl.textContent = ""; }, 3000);
     } catch (e) {
       statusEl.style.color = "var(--red)";
       statusEl.textContent = "Failed to send override";
     }
   }
 
-  // ── Acknowledge ─────────────────────────────────────────────────────────────
   async function acknowledge() {
     try {
       await fetch("/api/acknowledge", { method: "POST" });
     } catch (e) {
-      console.error("Acknowledge failed", e);
+      console.log("Acknowledge failed");
     }
   }
 </script>

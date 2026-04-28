@@ -1,15 +1,3 @@
-"""
-db.py
-SQLite database helpers.
-
-Handles all read/write operations for the sepsis warning system.
-Database file: sepsis.db (auto-created on first run in laptop/ folder)
-
-Tables:
-  vitals  - every incoming reading with SOFA scores
-  alerts  - every sepsis alert that fired
-"""
-
 import sqlite3
 import os
 
@@ -23,9 +11,8 @@ def get_connection():
 
 
 def init_db():
-    """Create tables if they don't exist. Safe to call on every startup."""
     conn = get_connection()
-    c    = conn.cursor()
+    c = conn.cursor()
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS vitals (
@@ -72,7 +59,6 @@ def init_db():
 
 
 def insert_vital(patient_id, timestamp, vitals, sofa, trend):
-    """Insert one vitals reading with its SOFA result and trend status."""
     conn = get_connection()
     conn.execute("""
         INSERT INTO vitals (
@@ -84,18 +70,17 @@ def insert_vital(patient_id, timestamp, vitals, sofa, trend):
     """, (
         patient_id, timestamp,
         vitals.get("heart_rate"), vitals.get("resp_rate"),
-        vitals.get("sbp"),        vitals.get("dbp"),
+        vitals.get("sbp"), vitals.get("dbp"),
         vitals.get("spo2"),
-        sofa["total"],       sofa["respiration"],
+        sofa["total"], sofa["respiration"],
         sofa["cardiovascular"], sofa["renal"], sofa["cns_proxy"],
-        trend["status"],     trend["delta"],  trend.get("baseline"),
+        trend["status"], trend["delta"], trend.get("baseline"),
     ))
     conn.commit()
     conn.close()
 
 
 def insert_alert(patient_id, timestamp, sofa, trend):
-    """Insert a new sepsis alert event."""
     conn = get_connection()
     conn.execute("""
         INSERT INTO alerts (
@@ -105,9 +90,9 @@ def insert_alert(patient_id, timestamp, sofa, trend):
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         patient_id, timestamp,
-        sofa["total"],          sofa["respiration"],
+        sofa["total"], sofa["respiration"],
         sofa["cardiovascular"], sofa["renal"],
-        sofa["cns_proxy"],      trend["delta"],
+        sofa["cns_proxy"], trend["delta"],
     ))
     conn.commit()
     conn.close()
@@ -115,7 +100,6 @@ def insert_alert(patient_id, timestamp, sofa, trend):
 
 
 def acknowledge_latest_alert(patient_id):
-    """Mark the most recent unacknowledged alert as acknowledged."""
     conn = get_connection()
     conn.execute("""
         UPDATE alerts
@@ -131,7 +115,6 @@ def acknowledge_latest_alert(patient_id):
 
 
 def get_recent_vitals(patient_id, limit=60):
-    """Return last N vitals rows for a patient — used by dashboard chart."""
     conn = get_connection()
     rows = conn.execute("""
         SELECT * FROM vitals
@@ -140,11 +123,14 @@ def get_recent_vitals(patient_id, limit=60):
         LIMIT ?
     """, (patient_id, limit)).fetchall()
     conn.close()
-    return [dict(r) for r in reversed(rows)]
+
+    result = []
+    for r in reversed(rows):
+        result.append(dict(r))
+    return result
 
 
 def get_alerts(patient_id):
-    """Return all alerts for a patient — used by dashboard alert log."""
     conn = get_connection()
     rows = conn.execute("""
         SELECT * FROM alerts
@@ -152,15 +138,16 @@ def get_alerts(patient_id):
         ORDER BY created_at DESC
     """, (patient_id,)).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
 
+    result = []
+    for r in rows:
+        result.append(dict(r))
+    return result
 
-# ── Quick test ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import os
 
-    # clean slate for test
     if os.path.exists(DB_PATH):
         os.remove(DB_PATH)
 

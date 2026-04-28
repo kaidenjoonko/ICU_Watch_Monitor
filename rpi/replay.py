@@ -1,37 +1,17 @@
-"""
-replay.py
-Raspberry Pi entry point — bedside monitor simulator.
-
-Reads real patient vitals from MIMIC-III CHARTEVENTS.csv and publishes
-them over MQTT to the laptop server, one reading every INTERVAL seconds.
-
-Usage:
-    python replay.py                         # uses default patient
-    python replay.py --patient 10006         # specific subject ID
-    python replay.py --speed 5               # seconds between readings
-    python replay.py --list                  # list all available patient IDs
-
-MQTT topic published: sepsis/vitals
-"""
-
 import csv
 import json
 import time
 import argparse
 import paho.mqtt.client as mqtt
-from collections import defaultdict
 from datetime import datetime
 
-# ── Config ───────────────────────────────────────────────────────────────────
-
-BROKER_IP   = "172.20.10.4"   # change to laptop's IP when running on real RPi
-BROKER_PORT = 1883
+BROKER_IP    = "172.20.10.4"
+BROKER_PORT  = 1883
 TOPIC_VITALS = "sepsis/vitals"
-INTERVAL     = 5            # seconds between readings
+INTERVAL     = 5
 
 DATA_PATH = "data/mimic3-demo/CHARTEVENTS.csv"
 
-# MIMIC item IDs for each vital sign (MetaVision format used in demo dataset)
 ITEM_IDS = {
     220045: "heart_rate",
     220210: "resp_rate",
@@ -41,7 +21,6 @@ ITEM_IDS = {
     223761: "temperature",
 }
 
-# ── MQTT setup ───────────────────────────────────────────────────────────────
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -49,8 +28,10 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"[MQTT] Connection failed — code {rc}")
 
+
 def on_disconnect(client, userdata, rc):
     print("[MQTT] Disconnected from broker")
+
 
 def build_client():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
@@ -58,16 +39,10 @@ def build_client():
     client.on_disconnect = on_disconnect
     return client
 
-# ── MIMIC data loading ───────────────────────────────────────────────────────
 
 def load_patients(data_path):
-    """
-    Read CHARTEVENTS.csv and group vitals by subject ID.
-    Returns a dict: { subject_id: [ {timestamp, vital_name, value}, ... ] }
-    Only keeps rows whose ITEMID is one of our vital sign item IDs.
-    """
     print(f"[DATA] Loading CHARTEVENTS from {data_path} ...")
-    patients = defaultdict(list)
+    patients = {}
 
     with open(data_path, newline="") as f:
         reader = csv.DictReader(f)
@@ -87,6 +62,9 @@ def load_patients(data_path):
             except (ValueError, KeyError):
                 continue
 
+            if subject_id not in patients:
+                patients[subject_id] = []
+
             patients[subject_id].append({
                 "timestamp":  charttime,
                 "vital_name": ITEM_IDS[item_id],
@@ -98,36 +76,36 @@ def load_patients(data_path):
 
 
 def group_by_timestamp(readings):
-    """
-    Group individual vital readings by timestamp window.
-    Returns a sorted list of (timestamp, vitals_dict) tuples.
-    Merges readings within the same hour into one snapshot.
-    """
-    buckets = defaultdict(dict)
+    buckets = {}
+
     for r in readings:
-        # round to nearest hour to group simultaneous readings
         try:
             dt  = datetime.strptime(r["timestamp"], "%Y-%m-%d %H:%M:%S")
             key = dt.strftime("%Y-%m-%d %H:00")
         except ValueError:
-            key = r["timestamp"][:13]   # fallback: first 13 chars
+            key = r["timestamp"][:13]
 
-        # keep latest value if multiple readings in same bucket
+        if key not in buckets:
+            buckets[key] = {}
+
         buckets[key][r["vital_name"]] = r["value"]
 
     sorted_keys = sorted(buckets.keys())
-    return [(k, buckets[k]) for k in sorted_keys]
+
+    result = []
+    for k in sorted_keys:
+        result.append((k, buckets[k]))
+    return result
 
 
 def list_patients(patients):
     print("\nAvailable patient IDs:")
     for pid in sorted(patients.keys()):
         count = len(patients[pid])
-        print(f"  Subject {pid:6d} — {count} vital readings")
+        print(f"  Subject {pid} — {count} vital readings")
     print()
 
-# ── Main replay loop ─────────────────────────────────────────────────────────
-
+#Recieved help from Claude to help with the paylaod json
 def replay(patient_id, patients, client, interval):
     if patient_id not in patients:
         print(f"[ERROR] Patient {patient_id} not found in dataset")
@@ -145,32 +123,39 @@ def replay(patient_id, patients, client, interval):
     print(f"[REPLAY] {len(snapshots)} time windows — publishing every {interval}s")
     print(f"[REPLAY] Press Ctrl+C to stop\n")
 
-    for i, (timestamp, vitals) in enumerate(snapshots):
-        # skip snapshots with fewer than 2 vitals — not useful
+    i = 0
+    for item in snapshots:
+        timestamp = item[0]
+        vitals    = item[1]
+
         if len(vitals) < 2:
+            i = i + 1
             continue
 
         payload = {
-            "patient_id": patient_id,
-            "timestamp":  timestamp,
+            "patient_id":  patient_id,
+            "timestamp":   timestamp,
             "reading_num": i + 1,
-            **vitals
         }
+        for key in vitals:
+            payload[key] = vitals[key]
 
         message = json.dumps(payload)
         result  = client.publish(TOPIC_VITALS, message)
 
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
-            vitals_str = "  ".join(
-                f"{k}={v:.0f}" for k, v in vitals.items()
-            )
-            print(f"[{i+1:03d}] {timestamp}  {vitals_str}")
+            vitals_str = ""
+            for k in vitals:
+                if vitals_str != "":
+                    vitals_str = vitals_str + "  "
+                vitals_str = vitals_str + k + "=" + str(round(vitals[k]))
+            print(f"[{i + 1}] {timestamp}  {vitals_str}")
         else:
-            print(f"[{i+1:03d}] Publish failed — rc={result.rc}")
+            print(f"[{i + 1}] Publish failed — rc={result.rc}")
 
         time.sleep(interval)
+        i = i + 1
 
-    # signal session end
     client.publish(TOPIC_VITALS, json.dumps({
         "patient_id": patient_id,
         "session_end": True
@@ -178,14 +163,12 @@ def replay(patient_id, patients, client, interval):
     print(f"\n[REPLAY] Session complete for patient {patient_id}")
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────
-
 def main():
     parser = argparse.ArgumentParser(description="MIMIC-III vitals replay — bedside monitor simulator")
-    parser.add_argument("--patient", type=int, default=None,   help="Subject ID to replay")
+    parser.add_argument("--patient", type=int, default=None,     help="Subject ID to replay")
     parser.add_argument("--speed",   type=int, default=INTERVAL, help="Seconds between readings")
     parser.add_argument("--broker",  type=str, default=BROKER_IP, help="MQTT broker IP address")
-    parser.add_argument("--list",    action="store_true",       help="List available patient IDs")
+    parser.add_argument("--list",    action="store_true",         help="List available patient IDs")
     args = parser.parse_args()
 
     patients = load_patients(DATA_PATH)
@@ -194,7 +177,6 @@ def main():
         list_patients(patients)
         return
 
-    # pick a patient — use first available if none specified
     patient_id = args.patient
     if patient_id is None:
         patient_id = sorted(patients.keys())[0]
@@ -204,7 +186,7 @@ def main():
     client.connect(args.broker, BROKER_PORT, keepalive=60)
     client.loop_start()
 
-    time.sleep(1)   # give connection a moment to establish
+    time.sleep(1)
 
     try:
         replay(patient_id, patients, client, args.speed)
