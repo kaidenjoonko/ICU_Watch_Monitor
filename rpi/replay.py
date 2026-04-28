@@ -24,7 +24,7 @@ from datetime import datetime
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
-BROKER_IP   = "localhost"   # change to laptop's IP when running on real RPi
+BROKER_IP   = "172.20.10.4"   # change to laptop's IP when running on real RPi
 BROKER_PORT = 1883
 TOPIC_VITALS = "sepsis/vitals"
 INTERVAL     = 5            # seconds between readings

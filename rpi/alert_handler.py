@@ -18,7 +18,7 @@ from led_controller import apply_status, set_blink_amber, set_off
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BROKER_IP    = "localhost"   # change to laptop's IP on real RPi
+BROKER_IP    = "172.20.10.4"   # change to laptop's IP on real RPi
 BROKER_PORT  = 1883
 TOPIC_STATUS = "sepsis/status"
 TOPIC_ACK    = "sepsis/acknowledge"
