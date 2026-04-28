@@ -1,5 +1,6 @@
 # 🏥 ICU Watch Monitor
-### Real-time Sepsis Early Warning System — EE 250 Final Project
+### Real-time Sepsis Early Warning System — EE 250 Final Project - Kaiden Ko & Ramanjot Singh
+
 
 A two-node IoT system that simulates an ICU bedside monitoring setup. The Raspberry Pi streams real patient vitals from the MIMIC-III clinical dataset over MQTT to a laptop server, which runs a SOFA scoring algorithm to detect sepsis onset in real time. A GrovePi LED physically reflects patient status — green, yellow, or red — with a buzzer alarm on critical alerts.
 
