@@ -2,154 +2,207 @@
 led_controller.py
 GrovePi LED and buzzer controller.
 
-Controls the RGB LED and buzzer on the GrovePi to reflect patient status.
+Hardware configuration:
+  Green LED  -- D4
+  White LED  -- D3
+  Buzzer     -- D2
 
 LED states:
-  green       - patient stable
-  yellow      - deteriorating, watch closely
-  red         - sepsis alert, buzzer fires
-  blink_amber - alert acknowledged, still elevated
+  green    patient stable        green ON solid, white OFF
+  yellow   patient deteriorating green OFF, white ON solid
+  red      sepsis alert          both LEDs blinking + buzzer fires once
+                                 then both keep blinking until resolved
+  off      session ended         all off
 
-Hardware:
-  LED    wired to D4 (digital pin 4)
-  Buzzer wired to D8 (digital pin 8)
+Transitions:
+  green  -> yellow : green turns off, white turns on
+  yellow -> red    : white stops solid, both start blinking, buzzer fires once
+  red    -> green  : blink stops, green turns on solid (patient recovered)
+  red    -> ack    : blink stops, green turns on solid (clinician acknowledged)
 
 Set REAL_HARDWARE = True when running on the actual RPi with GrovePi.
-Set REAL_HARDWARE = False to run in stub mode on laptop (prints to terminal).
+Set REAL_HARDWARE = False for laptop stub mode (prints to terminal).
 """
 
 import time
 import threading
 
 # ── Hardware flag ─────────────────────────────────────────────────────────────
-# Flip this to True when running on the actual RPi
-REAL_HARDWARE = False
+REAL_HARDWARE = True   # flip to False for laptop-only testing
 
-LED_PIN    = 4
-BUZZER_PIN = 8
+GREEN_PIN  = 4
+WHITE_PIN  = 3
+BUZZER_PIN = 2
 
-# ── GrovePi import (only runs on RPi) ─────────────────────────────────────────
+# ── GrovePi import ────────────────────────────────────────────────────────────
 if REAL_HARDWARE:
     try:
         import grovepi
-        import grove_rgb_lcd as lcd
+        grovepi.pinMode(GREEN_PIN,  "OUTPUT")
+        grovepi.pinMode(WHITE_PIN,  "OUTPUT")
+        grovepi.pinMode(BUZZER_PIN, "OUTPUT")
         print("[LED] GrovePi hardware initialized")
+        print(f"[LED] Green=D{GREEN_PIN}  White=D{WHITE_PIN}  Buzzer=D{BUZZER_PIN}")
     except ImportError:
-        print("[LED] WARNING — grovepi not found, falling back to stub mode")
+        print("[LED] WARNING -- grovepi not found, falling back to stub mode")
+        REAL_HARDWARE = False
+    except Exception as e:
+        print(f"[LED] WARNING -- hardware init failed: {e}, falling back to stub mode")
         REAL_HARDWARE = False
 
+# ── Current state tracking ────────────────────────────────────────────────────
+_current_status = None   # track last applied status to detect transitions
+
 # ── Blink thread control ──────────────────────────────────────────────────────
-_blink_thread  = None
-_blink_active  = False
-_blink_lock    = threading.Lock()
+_blink_thread = None
+_blink_active = False
+_blink_lock   = threading.Lock()
 
 
 def _stop_blink():
-    """Stop any currently running blink loop."""
     global _blink_active
     with _blink_lock:
         _blink_active = False
+    if _blink_thread and _blink_thread.is_alive():
+        _blink_thread.join(timeout=1.0)
 
 
-def _blink_loop(r, g, b, interval=0.6):
-    """Blink the LED at given color. Runs in a background thread."""
+def _blink_loop(pins, interval):
+    """Blink one or more pins simultaneously until stopped."""
     global _blink_active
-    on = True
-    while _blink_active:
-        if on:
-            _set_led(r, g, b)
-        else:
-            _set_led(0, 0, 0)
-        on = not on
+    state = True
+    while True:
+        with _blink_lock:
+            if not _blink_active:
+                break
+        for pin in pins:
+            _write_pin(pin, 1 if state else 0)
+        state = not state
         time.sleep(interval)
-    _set_led(0, 0, 0)
+    # turn off all blink pins when stopped
+    for pin in pins:
+        _write_pin(pin, 0)
 
 
-def _start_blink(r, g, b, interval=0.6):
-    """Start blinking LED in background thread."""
+def _start_blink(pins, interval=0.4):
     global _blink_thread, _blink_active
     _stop_blink()
-    time.sleep(0.1)
+    time.sleep(0.05)
     with _blink_lock:
         _blink_active = True
     _blink_thread = threading.Thread(
-        target=_blink_loop, args=(r, g, b, interval), daemon=True
+        target=_blink_loop, args=(pins, interval), daemon=True
     )
     _blink_thread.start()
 
 
-# ── Low-level hardware calls ──────────────────────────────────────────────────
+# ── Low level pin writes ──────────────────────────────────────────────────────
 
-def _set_led(r, g, b):
+def _write_pin(pin, val):
     if REAL_HARDWARE:
-        grovepi.digitalWrite(LED_PIN, 1 if (r or g or b) else 0)
+        try:
+            grovepi.digitalWrite(pin, val)
+        except Exception as e:
+            print(f"[LED] Pin write error D{pin}={val}: {e}")
     else:
-        color_name = _rgb_to_name(r, g, b)
-        if color_name:
-            print(f"[LED] {color_name}")
+        pin_name = {
+            GREEN_PIN:  "GREEN",
+            WHITE_PIN:  "WHITE",
+            BUZZER_PIN: "BUZZER"
+        }.get(pin, f"D{pin}")
+        print(f"[STUB] {pin_name} -> {'ON' if val else 'OFF'}")
 
 
-def _sound_buzzer(duration=1.0):
-    if REAL_HARDWARE:
-        grovepi.digitalWrite(BUZZER_PIN, 1)
-        time.sleep(duration)
-        grovepi.digitalWrite(BUZZER_PIN, 0)
-    else:
-        print(f"[BUZZER] ON for {duration}s")
-        time.sleep(duration)
-        print(f"[BUZZER] OFF")
+def _all_off():
+    _write_pin(GREEN_PIN,  0)
+    _write_pin(WHITE_PIN,  0)
+    _write_pin(BUZZER_PIN, 0)
 
 
-def _rgb_to_name(r, g, b):
-    if r == 0 and g == 0 and b == 0:
-        return None
-    if r == 0   and g == 255 and b == 0:   return "GREEN  — patient stable"
-    if r == 255 and g == 200 and b == 0:   return "YELLOW — deteriorating"
-    if r == 255 and g == 0   and b == 0:   return "RED    — SEPSIS ALERT"
-    if r == 255 and g == 140 and b == 0:   return "AMBER  — acknowledged"
-    return f"RGB({r},{g},{b})"
+# ── Buzzer (fires once, non-blocking) ─────────────────────────────────────────
+
+def _sound_buzzer(duration=3.0):
+    print(f"[BUZZER] Firing for {duration}s")
+    _write_pin(BUZZER_PIN, 1)
+    time.sleep(duration)
+    _write_pin(BUZZER_PIN, 0)
+    print(f"[BUZZER] Off")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def set_green():
-    """Stable — solid green."""
+    """
+    Patient stable.
+    Green ON solid and stays on until status changes.
+    White turns off.
+    """
     _stop_blink()
-    _set_led(0, 255, 0)
+    _write_pin(WHITE_PIN, 0)
+    _write_pin(GREEN_PIN, 1)
+    print("[STATUS] GREEN -- patient stable, green LED on")
 
 
 def set_yellow():
-    """Deteriorating — solid yellow."""
+    """
+    Patient deteriorating.
+    White ON solid and stays on until status changes.
+    Green turns off.
+    """
     _stop_blink()
-    _set_led(255, 200, 0)
+    _write_pin(GREEN_PIN, 0)
+    _write_pin(WHITE_PIN, 1)
+    print("[STATUS] YELLOW -- deteriorating, white LED on")
 
 
 def set_red():
-    """Sepsis alert — solid red + buzzer."""
-    _stop_blink()
-    _set_led(255, 0, 0)
+    """
+    Sepsis alert.
+    Both LEDs start blinking and keep blinking until resolved.
+    Buzzer fires once for 3 seconds then stops.
+    Blinking continues until set_green() or set_blink_amber() is called.
+    """
+    # start continuous blink on both LEDs
+    _start_blink([GREEN_PIN, WHITE_PIN], interval=0.4)
+    # buzzer fires once in background, blinking continues independently
     buzzer_thread = threading.Thread(
         target=_sound_buzzer, args=(3.0,), daemon=True
     )
     buzzer_thread.start()
+    print("[STATUS] RED -- SEPSIS ALERT, both LEDs blinking, buzzer firing")
 
 
 def set_blink_amber():
-    """Alert acknowledged — slow blinking amber."""
-    _start_blink(255, 140, 0, interval=0.8)
+    """
+    Alert acknowledged by clinician.
+    Stops blinking, green solid on — patient still elevated but reviewed.
+    """
+    _stop_blink()
+    _write_pin(WHITE_PIN, 0)
+    _write_pin(GREEN_PIN, 1)
+    print("[STATUS] ACKNOWLEDGED -- green solid, buzzer silenced")
 
 
 def set_off():
-    """Turn everything off."""
+    """Session ended — turn everything off."""
     _stop_blink()
-    _set_led(0, 0, 0)
+    _all_off()
+    print("[STATUS] OFF")
 
 
 def apply_status(status):
     """
-    Main entry point — call this with the status string from the server.
-    Maps green / yellow / red to the correct LED state.
+    Main entry point called by alert_handler.py.
+    Only applies a new state if status has actually changed —
+    avoids flickering LEDs on every repeated message.
     """
+    global _current_status
+
+    if status == _current_status:
+        return  # no change, do nothing
+
+    _current_status = status
+
     if status == "green":
         set_green()
     elif status == "yellow":
@@ -163,28 +216,26 @@ def apply_status(status):
 # ── Quick test ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("=== LED Controller Test ===\n")
-    print("Simulating patient deterioration sequence...\n")
+    print("=== LED Controller Test ===")
+    print(f"REAL_HARDWARE = {REAL_HARDWARE}\n")
 
-    print("Status: green")
-    apply_status("green")
-    time.sleep(1)
+    print("--- GREEN: patient stable (green stays on) ---")
+    set_green()
+    time.sleep(3)
 
-    print("Status: yellow")
-    apply_status("yellow")
-    time.sleep(1)
+    print("\n--- YELLOW: deteriorating (white stays on) ---")
+    set_yellow()
+    time.sleep(3)
 
-    print("Status: red")
-    apply_status("red")
-    time.sleep(4)
+    print("\n--- RED: sepsis alert (both blink, buzzer fires once, keeps blinking) ---")
+    set_red()
+    time.sleep(6)
 
-    print("Status: acknowledged (blink amber)")
+    print("\n--- ACKNOWLEDGED: clinician acks (green solid, blinking stops) ---")
     set_blink_amber()
     time.sleep(3)
 
-    print("Status: back to green")
-    apply_status("green")
-    time.sleep(1)
-
+    print("\n--- OFF: session ended ---")
     set_off()
+
     print("\n[LED] Test complete")
