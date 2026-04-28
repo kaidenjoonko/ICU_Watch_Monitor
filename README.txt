@@ -1,201 +1,202 @@
-================================================================================
-  EE 250 Final Project — ICU Watch Monitor
-  README.txt
-================================================================================
+# 🏥 ICU Watch Monitor
+### Real-time Sepsis Early Warning System — EE 250 Final Project
 
-Team Member
------------
-  Kaiden Ko
+A two-node IoT system that simulates an ICU bedside monitoring setup. The Raspberry Pi streams real patient vitals from the MIMIC-III clinical dataset over MQTT to a laptop server, which runs a SOFA scoring algorithm to detect sepsis onset in real time. A GrovePi LED physically reflects patient status — green, yellow, or red — with a buzzer alarm on critical alerts.
 
---------------------------------------------------------------------------------
-Project Overview
---------------------------------------------------------------------------------
+---
 
-ICU Watch Monitor is a real-time sepsis early warning system that simulates
-an ICU bedside monitoring setup using two physical nodes. The Raspberry Pi
-acts as a bedside monitor, replaying real patient vitals from the MIMIC-III
-Clinical Database Demo over MQTT to a laptop server every 5 seconds. The
-laptop receives each transmission, computes a rolling SOFA (Sequential Organ
-Failure Assessment) score across 4 organ systems, and tracks whether the
-patient's score is rising from their baseline. Based on the current SOFA
-delta, the laptop publishes a status back to the RPi — green if stable,
-yellow if deteriorating, red if the sepsis threshold is crossed — and the
-RPi's GrovePi LED physically changes color to match, with the buzzer firing
-on a red alert. A Flask dashboard on the laptop displays live vitals, SOFA
-breakdown, trend chart, and alert log. The clinician can manually inject
-vital overrides to test system response, and acknowledge alerts to silence
-the buzzer and log the response time.
+## 📡 System Architecture
 
-Node roles:
-  Node 1 (Raspberry Pi) — MIMIC data replay, MQTT publisher,
-                           alert subscriber, GrovePi LED/buzzer output
-  Node 2 (Laptop)       — Mosquitto broker, SOFA scoring engine,
-                           trend detector, alert publisher, Flask dashboard
+```
+┌─────────────────────────────┐         ┌──────────────────────────────────┐
+│     Raspberry Pi            │         │           Laptop                 │
+│   (Bedside Monitor)         │         │     (Clinical Server)            │
+│                             │         │                                  │
+│  MIMIC-III CSV              │         │  Mosquitto Broker                │
+│       ↓                     │─vitals→ │       ↓                          │
+│  replay.py                  │  MQTT   │  server.py                       │
+│       ↓                     │         │       ↓                          │
+│  alert_handler.py           │←status─ │  sofa.py + trend.py              │
+│       ↓                     │  MQTT   │       ↓                          │
+│  led_controller.py          │         │  db.py (SQLite)                  │
+│       ↓                     │         │       ↓                          │
+│  GrovePi LED + Buzzer       │         │  Flask Dashboard                 │
+│  🟢 green  stable           │         │  http://localhost:5000           │
+│  🟡 yellow deteriorating    │         │                                  │
+│  🔴 red    sepsis alert     │         │                                  │
+└─────────────────────────────┘         └──────────────────────────────────┘
+```
 
-MQTT topics:
-  sepsis/vitals      RPi -> Laptop    patient vitals JSON every 5 seconds
-  sepsis/status      Laptop -> RPi    green / yellow / red status
-  sepsis/acknowledge Laptop -> RPi    clinician ack, silences buzzer
+| MQTT Topic | Direction | Purpose |
+|---|---|---|
+| `sepsis/vitals` | RPi → Laptop | Patient vitals JSON every 5 seconds |
+| `sepsis/status` | Laptop → RPi | green / yellow / red status |
+| `sepsis/acknowledge` | Laptop → RPi | Clinician ack, silences buzzer |
 
---------------------------------------------------------------------------------
-Repository Structure
---------------------------------------------------------------------------------
+---
 
-  ICU_Watch_Monitor/
-  |-- README.txt
-  |-- laptop/
-  |   |-- server.py              Main entry point -- MQTT subscriber,
-  |   |                          SOFA pipeline orchestrator, Flask launcher
-  |   |-- app.py                 Flask routes -- /api/state, /override, /acknowledge
-  |   |-- sofa.py                SOFA scoring engine -- 4 organ subscores
-  |   |-- trend.py               Baseline tracker -- delta detection, status logic
-  |   |-- db.py                  SQLite helpers -- init, insert vitals/alerts
-  |   |-- templates/
-  |   |   |-- index.html         Dashboard UI
-  |   |-- requirements.txt
-  |-- rpi/
-      |-- replay.py              Reads MIMIC CSV, publishes vitals over MQTT
-      |-- alert_handler.py       Subscribes to status, drives LED + buzzer
-      |-- led_controller.py      GrovePi LED/buzzer abstraction layer
-      |-- requirements.txt
+## 🧠 How It Works
 
---------------------------------------------------------------------------------
-Dataset Setup (required before running)
---------------------------------------------------------------------------------
+1. The RPi reads real ICU patient data from MIMIC-III and publishes timestamped vitals over MQTT
+2. The laptop computes a **SOFA score** across 4 organ systems per reading:
+   - Respiration (SpO2)
+   - Cardiovascular (Mean Arterial Pressure)
+   - Renal (HR/MAP ratio proxy)
+   - CNS proxy (combined HR + RR stress index)
+3. A baseline is established from the first 5 readings. If the SOFA delta rises ≥ 2 from baseline — the clinical sepsis threshold — an alert fires
+4. The RPi LED changes color in real time. On red alert, the buzzer fires and the dashboard shows a full alert banner
+5. The clinician can **inject manual vital overrides** to test system response, and **acknowledge alerts** to silence the buzzer
 
-1. Go to https://physionet.org/content/mimiciii-demo/1.4/
-2. Create a free PhysioNet account and accept the data use agreement
-3. Download the demo dataset ZIP file (~13 MB)
-4. Unzip and place the folder contents at:
-     rpi/data/mimic3-demo/
-   The replay script expects CHARTEVENTS.csv at that path.
+---
 
-The MIMIC-III demo dataset is not included in this repository in accordance
-with PhysioNet's data use agreement. It is freely available to anyone with
-a PhysioNet account and requires no special credentialing.
+## 📁 Repository Structure
 
-Recommended demo patient: Subject 41976
-  Run: python replay.py --patient 41976
+```
+ICU_Watch_Monitor/
+├── README.md
+├── laptop/
+│   ├── server.py              # Entry point — MQTT + Flask launcher
+│   ├── app.py                 # Flask routes — /api/state, /override, /acknowledge
+│   ├── sofa.py                # SOFA scoring engine
+│   ├── trend.py               # Baseline tracker, delta detection
+│   ├── db.py                  # SQLite helpers
+│   ├── templates/
+│   │   └── index.html         # Dashboard UI
+│   └── requirements.txt
+└── rpi/
+    ├── replay.py              # MIMIC data replay, MQTT publisher
+    ├── alert_handler.py       # Status subscriber, drives LED + buzzer
+    ├── led_controller.py      # GrovePi LED/buzzer abstraction
+    └── requirements.txt
+```
 
---------------------------------------------------------------------------------
-Dependencies
---------------------------------------------------------------------------------
+---
 
-LAPTOP (laptop/requirements.txt):
-  paho-mqtt       MQTT client -- subscribe/publish
-  flask           Web framework -- dashboard server
-  numpy           Numerical computation -- SOFA scoring, rolling windows
+## ⚙️ Setup
 
-RASPBERRY PI (rpi/requirements.txt):
-  paho-mqtt       MQTT client -- publish vitals, receive alerts
-  numpy           Vitals preprocessing
-  grovepi         GrovePi hardware interface -- LED, buzzer
+### Dataset (required before running)
 
-Install on laptop:
-  pip install -r laptop/requirements.txt
+The MIMIC-III dataset is not included in this repo per PhysioNet's data use agreement.
 
-Install on RPi:
-  pip install -r rpi/requirements.txt
+1. Create a free account at [PhysioNet](https://physionet.org/content/mimiciii-demo/1.4/)
+2. Download the demo dataset ZIP (~13 MB)
+3. Unzip and place contents at `rpi/data/mimic3-demo/`
 
---------------------------------------------------------------------------------
-How to Run
---------------------------------------------------------------------------------
+> Recommended demo patient: **Subject 41976** — confirmed sepsis deterioration arc
 
-STEP 0 -- Network setup
-  Ensure both the laptop and RPi are on the same WiFi network.
-  Find the laptop's IP address: run `ipconfig getifaddr en0` on Mac.
-  In rpi/replay.py and rpi/alert_handler.py, set:
-    BROKER_IP = "<your laptop IP>"
+### Install Dependencies
 
-STEP 1 -- Hardware setup (RPi only)
-  Wire GrovePi LED to digital pin D4
-  Wire GrovePi buzzer to digital pin D8
-  In rpi/led_controller.py, set:
-    REAL_HARDWARE = True
-  (Leave as False if testing on laptop only)
+**Laptop:**
+```bash
+pip install -r laptop/requirements.txt
+```
 
---- ON YOUR LAPTOP (run in separate terminals) ---
+**Raspberry Pi:**
+```bash
+pip install -r rpi/requirements.txt
+```
 
-STEP 2 -- Start the MQTT broker
-  $ mosquitto
+> If `grovepi` fails to install via pip, use the official installer:
+> ```bash
+> curl -kL dexterindustries.com/update_grovepi | bash
+> ```
 
-STEP 3 -- Start the server and dashboard
-  $ cd laptop/
-  $ python server.py
-  Dashboard available at: http://localhost:5000
+### Network Configuration
 
---- ON THE RASPBERRY PI ---
+1. Get your laptop's IP: `ipconfig getifaddr en0` (Mac)
+2. In `rpi/replay.py` and `rpi/alert_handler.py`, set:
+   ```python
+   BROKER_IP = "<your laptop IP>"
+   ```
+3. In `rpi/led_controller.py`, set:
+   ```python
+   REAL_HARDWARE = True   # False for laptop-only testing
+   ```
 
-STEP 4 -- SSH into RPi
-  $ ssh pi@<RPi_IP_address>
+### Hardware Wiring (RPi)
 
-STEP 5 -- Start the alert handler
-  $ cd rpi/
-  $ python alert_handler.py
+| Component | GrovePi Pin |
+|---|---|
+| RGB LED | D4 |
+| Buzzer | D8 |
 
-STEP 6 -- Start the vitals replay
-  $ python replay.py --patient 41976 --speed 1
+---
 
---- DEMO ---
+## 🚀 Running the Project
 
-Open http://localhost:5000 in your browser. Vitals update every second.
-Watch the SOFA score trend as patient 41976 deteriorates -- the dashboard
-will turn red, the alert banner will appear, and the GrovePi LED will
-switch to red with the buzzer firing. Click Acknowledge to silence the
-buzzer and log the response.
+Open **4 terminals**:
 
-To test the override panel:
-  Drag the SpO2 slider to 85% and click Inject -- watch the SOFA
-  respiration subscore jump and the total score react immediately.
+**Terminal 1 — Start MQTT broker (laptop)**
+```bash
+mosquitto
+```
 
-Additional flags for replay.py:
-  --patient <id>    Select a specific MIMIC subject ID
-  --speed <sec>     Seconds between readings (default 5, use 1 for demo)
-  --list            List all available patient IDs
+**Terminal 2 — Start server + dashboard (laptop)**
+```bash
+cd laptop/
+python server.py
+# Dashboard at http://localhost:5000
+```
 
---------------------------------------------------------------------------------
-External Libraries Used
---------------------------------------------------------------------------------
+**Terminal 3 — Start alert handler (RPi)**
+```bash
+cd rpi/
+python alert_handler.py
+```
 
-  paho-mqtt         MQTT client library
-  flask             Lightweight Python web framework
-  numpy             Numerical computing
-  grovepi           GrovePi sensor/actuator interface (RPi only)
-  sqlite3           Built-in Python -- session and alert storage
-  threading         Built-in Python -- concurrent Flask + MQTT loops
-  csv               Built-in Python -- MIMIC dataset parsing
+**Terminal 4 — Start vitals replay (RPi)**
+```bash
+cd rpi/
+python replay.py --patient 41976 --speed 1
+```
 
---------------------------------------------------------------------------------
-AI Tool Disclosure
---------------------------------------------------------------------------------
+Open `http://localhost:5000` and watch the patient deteriorate in real time.
 
-This project was developed with assistance from Claude (Anthropic) for
-system architecture planning, code structure, and implementation guidance.
-All design decisions, dataset selection, algorithm choices, hardware wiring,
-testing, debugging, and final implementation were completed by the student.
-Claude was used as a coding assistant in a manner consistent with the
-course policy on transparent AI tool use.
+### Replay flags
+```bash
+python replay.py --patient 41976   # specific patient
+python replay.py --speed 1         # 1 second between readings (demo mode)
+python replay.py --list            # list all available patient IDs
+```
 
---------------------------------------------------------------------------------
-Known Limitations
---------------------------------------------------------------------------------
+---
 
-  - Simplified SOFA model: uses 4 organ systems from bedside vitals only.
-    Full clinical SOFA uses 6 systems including lab values (bilirubin,
-    creatinine, platelets) not present in the bedside vitals stream.
+## 📊 Dashboard
 
-  - Demo dataset: MIMIC-III demo contains 50 patients with MetaVision
-    format vitals. The full MIMIC-III dataset requires credentialing but
-    was not necessary for this project scope.
+- **Live vitals** — HR, respiratory rate, blood pressure, SpO2
+- **SOFA breakdown** — per-organ subscores with color-coded bars
+- **Trend chart** — SOFA score history across the session
+- **Manual override panel** — inject custom vital values to test system response
+- **Alert log** — timestamped record of all alerts and acknowledgements
+- **Acknowledge button** — silences RPi buzzer, switches LED to blinking amber
 
-  - Replay speed: default 5-second interval is 10x faster than real ICU
-    monitoring cadence. Configurable via --speed flag.
+---
 
-  - Vitals grouping: readings within the same hour window are merged into
-    one snapshot. Some snapshots may be missing one or more vitals if the
-    sensor was not recorded that hour.
+## ⚠️ Known Limitations
 
-  - GrovePi LED: the led_controller supports any GrovePi RGB LED module.
-    If unavailable, set REAL_HARDWARE = False to run in stub/print mode.
+- **Simplified SOFA** — uses 4 organ systems from bedside vitals. Full clinical SOFA uses 6 systems including lab values (bilirubin, creatinine, platelets) not available in the vitals stream
+- **Demo dataset** — MIMIC-III demo contains 50 patients. Full dataset requires credentialing
+- **Replay speed** — default 5s interval is 10x faster than real ICU monitoring cadence. Configurable via `--speed`
+- **Vitals grouping** — readings within the same hour window are merged. Some snapshots may be missing vitals if not recorded that hour
 
-================================================================================
+---
+
+## 📦 External Libraries
+
+| Library | Purpose |
+|---|---|
+| `paho-mqtt` | MQTT client — publish and subscribe |
+| `flask` | Web framework — dashboard server |
+| `numpy` | Numerical computation — SOFA scoring |
+| `grovepi` | GrovePi hardware interface (RPi only) |
+| `sqlite3` | Built-in — session and alert storage |
+
+---
+
+## 🤖 AI Tool Disclosure
+
+This project was developed with assistance from Claude (Anthropic) for system architecture planning, code structure, and implementation guidance. All design decisions, algorithm choices, hardware wiring, testing, and debugging were completed by the student. Use of AI tools is acknowledged in accordance with EE 250 course policy.
+
+---
+
+*EE 250 — Embedded Systems and the Internet of Things — University of Southern California*
