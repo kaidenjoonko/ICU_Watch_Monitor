@@ -207,6 +207,14 @@ def handle_acknowledge(client, payload):
 def start_server():
     init_db()
 
+    # start Flask dashboard in background thread
+    def run_flask():
+        from app import app as flask_app
+        flask_app.run(port=5000, debug=False, use_reloader=False)
+
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
     client.on_connect = on_connect
     client.on_message = on_message

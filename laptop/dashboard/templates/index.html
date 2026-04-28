@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ICU Watch Monitor</title>
+  <style>
+    /* ── Reset & base ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-bg:  #0d2e1a;
+      --yellow:    #d29922;
+      --yellow-bg: #2d2207;
+      --red:       #f85149;
+      --red-bg:    #2d0f0f;
+      --amber:     #e3a227;
+      --blue:      #58a6ff;
+      --font:      -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono:      "SFMono-Regular", Consolas, monospace;
+      --radius:    8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────── */
+    .header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-left h1 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .header-left p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ── Cards ─────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    /* ── Badges ─────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    .badge-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .badge-green  { background: var(--green-bg);  color: var(--green);  }
+    .badge-yellow { background: var(--yellow-bg); color: var(--yellow); }
+    .badge-red    { background: var(--red-bg);    color: var(--red);    }
+    .badge-muted  { background: var(--bg3);       color: var(--muted);  }
+
+    .dot-green  { background: var(--green);  }
+    .dot-yellow { background: var(--yellow); }
+    .dot-red    { background: var(--red); animation: pulse 1s infinite; }
+    .dot-muted  { background: var(--muted);  }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ── Alert banner ───────────────────────────────────────────── */
+    #alert-banner {
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    #alert-banner.red {
+      display: flex;
+      background: var(--red-bg);
+      border: 1px solid var(--red);
+    }
+
+    #alert-banner.amber {
+      display: flex;
+      background: #2d1f07;
+      border: 1px solid var(--amber);
+    }
+
+    .alert-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .alert-sub {
+      font-size: 12px;
+      margin-top: 3px;
+      opacity: 0.8;
+    }
+
+    .btn {
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: 1px solid;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s;
+    }
+
+    .btn:hover { opacity: 0.8; }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+
+    .btn-red    { background: transparent; border-color: var(--red);   color: var(--red);   }
+    .btn-amber  { background: transparent; border-color: var(--amber); color: var(--amber); }
+    .btn-blue   { background: var(--blue); border-color: var(--blue);  color: #000; }
+
+    /* ── Vitals grid ────────────────────────────────────────────── */
+    .vitals-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .vital-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+
+    .vital-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .vital-value {
+      font-size: 28px;
+      font-weight: 600;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .vital-unit {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 3px;
+    }
+
+    .vital-status {
+      font-size: 11px;
+      margin-top: 6px;
+    }
+
+    /* ── Two column row ─────────────────────────────────────────── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    /* ── SOFA bars ──────────────────────────────────────────────── */
+    .sofa-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .sofa-row:last-of-type { margin-bottom: 0; }
+
+    .sofa-organ {
+      font-size: 12px;
+      color: var(--muted);
+      width: 110px;
+      flex-shrink: 0;
+    }
+
+    .sofa-bar-bg {
+      flex: 1;
+      height: 6px;
+      background: var(--bg3);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .sofa-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    .sofa-score-num {
+      font-size: 13px;
+      font-weight: 500;
+      width: 20px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .sofa-total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .sofa-total-label { font-size: 13px; color: var(--muted); }
+    .sofa-total-val   { font-size: 22px; font-weight: 600; }
+
+    /* ── Override panel ─────────────────────────────────────────── */
+    .override-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .override-label {
+      font-size: 12px;
+      color: var(--muted);
+      width: 80px;
+      flex-shrink: 0;
+    }
+
+    .override-val {
+      font-size: 12px;
+      font-weight: 500;
+      width: 34px;
+      text-align: right;
+      flex-shrink: 0;
+      font-family: var(--mono);
+    }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--blue);
+      cursor: pointer;
+    }
+
+    .inject-status {
+      font-size: 11px;
+      color: var(--green);
+      min-height: 16px;
+      margin-top: 6px;
+    }
+
+    /* ── Alert log ──────────────────────────────────────────────── */
+    .log-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .log-row:last-child { border-bottom: none; }
+
+    .log-time  { color: var(--muted); font-family: var(--mono); flex-shrink: 0; }
+    .log-msg   { flex: 1; }
+    .log-empty { color: var(--muted); font-size: 12px; }
+
+    /* ── Waiting state ──────────────────────────────────────────── */
+    .waiting {
+      text-align: center;
+      padding: 40px 0;
+      color: var(--muted);
+    }
+
+    .waiting h2 { font-size: 16px; margin-bottom: 6px; color: var(--text); }
+    .waiting p  { font-size: 13px; }
+
+    /* ── Trend chart ────────────────────────────────────────────── */
+    .chart-wrap {
+      height: 80px;
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      margin-top: 4px;
+    }
+
+    .chart-bar {
+      flex: 1;
+      border-radius: 2px 2px 0 0;
+      min-height: 2px;
+      transition: height 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<div class="header">
+  <div class="header-left">
+    <h1>ICU Watch Monitor</h1>
+    <p id="header-sub">Waiting for patient data...</p>
+  </div>
+  <div class="header-right">
+    <span id="status-badge" class="badge badge-muted">
+      <span class="badge-dot dot-muted"></span>
+      Offline
+    </span>
+  </div>
+</div>
+
+<!-- ── Main content ─────────────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- Waiting state (shown before session starts) -->
+  <div id="waiting-state" class="waiting">
+    <h2>Waiting for patient stream</h2>
+    <p>Start replay.py on the Raspberry Pi to begin monitoring</p>
+  </div>
+
+  <!-- Active session content (hidden until data arrives) -->
+  <div id="active-state" style="display:none; display:flex; flex-direction:column; gap:16px;">
+
+    <!-- Alert banner -->
+    <div id="alert-banner">
+      <div>
+        <div class="alert-title" id="alert-title">SEPSIS ALERT</div>
+        <div class="alert-sub"  id="alert-sub">SOFA threshold exceeded</div>
+      </div>
+      <button class="btn btn-red" id="ack-btn" onclick="acknowledge()">
+        Acknowledge
+      </button>
+    </div>
+
+    <!-- Vitals cards -->
+    <div class="vitals-grid">
+      <div class="vital-card">
+        <div class="vital-label">Heart rate</div>
+        <div class="vital-value" id="v-hr">--<span class="vital-unit">bpm</span></div>
+        <div class="vital-status" id="s-hr"></div>
+      </div>
+      <div class="vital-card">
+        <div class="vital-label">Respiratory rate</div>
+        <div class="vital-value" id="v-rr">--<span class="vital-unit">/min</span></div>
+        <div class="vital-status" id="s-rr"></div>
+      </div>
+      <div class="vital-card">
+        <div class="vital-label">Blood pressure</div>
+        <div class="vital-value" id="v-bp">--<span class="vital-unit">mmHg</span></div>
+        <div class="vital-status" id="s-bp"></div>
+      </div>
+      <div class="vital-card">
+        <div class="vital-label">SpO2</div>
+        <div class="vital-value" id="v-spo2">--<span class="vital-unit">%</span></div>
+        <div class="vital-status" id="s-spo2"></div>
+      </div>
+    </div>
+
+    <!-- SOFA + Override -->
+    <div class="two-col">
+
+      <!-- SOFA breakdown -->
+      <div class="card">
+        <div class="card-title">SOFA score breakdown</div>
+        <div class="sofa-row">
+          <div class="sofa-organ">Respiration</div>
+          <div class="sofa-bar-bg"><div class="sofa-bar-fill" id="bar-resp" style="width:0%"></div></div>
+          <div class="sofa-score-num" id="num-resp">0</div>
+        </div>
+        <div class="sofa-row">
+          <div class="sofa-organ">Cardiovascular</div>
+          <div class="sofa-bar-bg"><div class="sofa-bar-fill" id="bar-cardio" style="width:0%"></div></div>
+          <div class="sofa-score-num" id="num-cardio">0</div>
+        </div>
+        <div class="sofa-row">
+          <div class="sofa-organ">Renal</div>
+          <div class="sofa-bar-bg"><div class="sofa-bar-fill" id="bar-renal" style="width:0%"></div></div>
+          <div class="sofa-score-num" id="num-renal">0</div>
+        </div>
+        <div class="sofa-row">
+          <div class="sofa-organ">CNS proxy</div>
+          <div class="sofa-bar-bg"><div class="sofa-bar-fill" id="bar-cns" style="width:0%"></div></div>
+          <div class="sofa-score-num" id="num-cns">0</div>
+        </div>
+        <div class="sofa-total-row">
+          <span class="sofa-total-label" id="sofa-delta-label">baseline --  delta --</span>
+          <span class="sofa-total-val"   id="sofa-total">0</span>
+        </div>
+      </div>
+
+      <!-- Manual override -->
+      <div class="card">
+        <div class="card-title">Manual vital override</div>
+        <div class="override-row">
+          <div class="override-label">SpO2 %</div>
+          <input type="range" min="70" max="100" value="98" id="sl-spo2"
+                 oninput="document.getElementById('ov-spo2').textContent=this.value"/>
+          <div class="override-val" id="ov-spo2">98</div>
+        </div>
+        <div class="override-row">
+          <div class="override-label">Heart rate</div>
+          <input type="range" min="40" max="160" value="80" id="sl-hr"
+                 oninput="document.getElementById('ov-hr').textContent=this.value"/>
+          <div class="override-val" id="ov-hr">80</div>
+        </div>
+        <div class="override-row">
+          <div class="override-label">Resp. rate</div>
+          <input type="range" min="8" max="40" value="16" id="sl-rr"
+                 oninput="document.getElementById('ov-rr').textContent=this.value"/>
+          <div class="override-val" id="ov-rr">16</div>
+        </div>
+        <div class="override-row">
+          <div class="override-label">Sys. BP</div>
+          <input type="range" min="60" max="180" value="120" id="sl-sbp"
+                 oninput="document.getElementById('ov-sbp').textContent=this.value"/>
+          <div class="override-val" id="ov-sbp">120</div>
+        </div>
+        <button class="btn btn-blue" onclick="injectOverride()" style="width:100%; margin-top:8px;">
+          Inject into next SOFA window
+        </button>
+        <div class="inject-status" id="inject-status"></div>
+      </div>
+
+    </div>
+
+    <!-- SOFA trend chart -->
+    <div class="card">
+      <div class="card-title">SOFA score trend</div>
+      <div class="chart-wrap" id="sofa-chart"></div>
+    </div>
+
+    <!-- Alert log -->
+    <div class="card">
+      <div class="card-title">Alert log</div>
+      <div id="alert-log"><div class="log-empty">No alerts yet</div></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let alertLog    = [];
+  let lastStatus  = null;
+  let sessionSeen = false;
+
+  // ── Polling ────────────────────────────────────────────────────────────────
+  async function poll() {
+    try {
+      const res  = await fetch("/api/state");
+      const data = await res.json();
+      render(data);
+    } catch (e) {
+      // server not ready yet — stay in waiting state
+    }
+  }
+
+  setInterval(poll, 2000);
+  poll();
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  function render(data) {
+    const active = data.session_active || (data.latest_vitals && Object.keys(data.latest_vitals).length > 0);
+
+    document.getElementById("waiting-state").style.display = active ? "none"  : "block";
+    document.getElementById("active-state").style.display  = active ? "flex"  : "none";
+
+    if (!active) return;
+
+    const v     = data.latest_vitals  || {};
+    const sofa  = data.latest_sofa    || {};
+    const trend = data.latest_trend   || {};
+    const status = trend.status || "green";
+
+    // header
+    document.getElementById("header-sub").textContent =
+      `Patient ${data.patient_id || "--"}  ·  Reading ${data.history?.length || "--"}  ·  ${new Date().toLocaleTimeString()}`;
+
+    // status badge
+    updateBadge(status, data.acknowledged);
+
+    // alert banner
+    updateAlertBanner(status, data.acknowledged, sofa, trend);
+
+    // vitals
+    setVital("v-hr",   v.heart_rate, "bpm",  "s-hr",   hrStatus(v.heart_rate));
+    setVital("v-rr",   v.resp_rate,  "/min", "s-rr",   rrStatus(v.resp_rate));
+    setVital("v-bp",   v.sbp ? `${Math.round(v.sbp)}/${Math.round(v.dbp)}` : "--", "mmHg", "s-bp", bpStatus(v.sbp));
+    setVital("v-spo2", v.spo2,       "%",    "s-spo2", spo2Status(v.spo2));
+
+    // SOFA bars
+    updateSofaBars(sofa, trend);
+
+    // chart
+    updateChart(data.history || []);
+
+    // alert log — only add on new red trigger
+    if (status === "red" && lastStatus !== "red" && !data.acknowledged) {
+      alertLog.unshift({
+        time:    new Date().toLocaleTimeString(),
+        msg:     `Sepsis alert — SOFA ${sofa.total} (delta +${trend.delta})`,
+        status:  "red",
+        acked:   false,
+      });
+      renderLog();
+    }
+
+    if (data.acknowledged && alertLog.length > 0 && !alertLog[0].acked) {
+      alertLog[0].acked = true;
+      renderLog();
+    }
+
+    lastStatus = status;
+  }
+
+  // ── Vitals helpers ──────────────────────────────────────────────────────────
+  function setVital(valId, val, unit, statusId, statusInfo) {
+    const el = document.getElementById(valId);
+    if (val === null || val === undefined) {
+      el.innerHTML = `--<span class="vital-unit">${unit}</span>`;
+    } else if (typeof val === "string" && val.includes("/")) {
+      el.innerHTML = `${val}<span class="vital-unit">${unit}</span>`;
+    } else {
+      el.innerHTML = `${Math.round(val)}<span class="vital-unit">${unit}</span>`;
+    }
+    const sEl = document.getElementById(statusId);
+    sEl.textContent = statusInfo.label;
+    sEl.style.color = statusInfo.color;
+  }
+
+  function hrStatus(v)   {
+    if (!v) return {label:"",color:"var(--muted)"};
+    if (v > 120) return {label:"high",    color:"var(--red)"};
+    if (v > 100) return {label:"elevated",color:"var(--yellow)"};
+    if (v < 50)  return {label:"low",     color:"var(--red)"};
+    return {label:"normal", color:"var(--green)"};
+  }
+
+  function rrStatus(v)   {
+    if (!v) return {label:"",color:"var(--muted)"};
+    if (v > 25) return {label:"high",    color:"var(--red)"};
+    if (v > 20) return {label:"elevated",color:"var(--yellow)"};
+    return {label:"normal", color:"var(--green)"};
+  }
+
+  function bpStatus(v)   {
+    if (!v) return {label:"",color:"var(--muted)"};
+    if (v < 80)  return {label:"critically low",color:"var(--red)"};
+    if (v < 90)  return {label:"low",            color:"var(--yellow)"};
+    if (v > 160) return {label:"high",            color:"var(--yellow)"};
+    return {label:"normal", color:"var(--green)"};
+  }
+
+  function spo2Status(v) {
+    if (!v) return {label:"",color:"var(--muted)"};
+    if (v < 90) return {label:"critical", color:"var(--red)"};
+    if (v < 94) return {label:"low",      color:"var(--yellow)"};
+    return {label:"normal", color:"var(--green)"};
+  }
+
+  // ── SOFA bars ───────────────────────────────────────────────────────────────
+  function updateSofaBars(sofa, trend) {
+    const bars = [
+      ["resp",   sofa.respiration,    "respiration"],
+      ["cardio", sofa.cardiovascular, "cardiovascular"],
+      ["renal",  sofa.renal,          "renal"],
+      ["cns",    sofa.cns_proxy,      "cns_proxy"],
+    ];
+
+    bars.forEach(([id, score]) => {
+      const pct   = (score / 4) * 100;
+      const color = score >= 3 ? "var(--red)" : score >= 2 ? "var(--yellow)" : score >= 1 ? "var(--amber)" : "var(--green)";
+      document.getElementById(`bar-${id}`).style.width      = `${pct}%`;
+      document.getElementById(`bar-${id}`).style.background = color;
+      document.getElementById(`num-${id}`).textContent      = score ?? 0;
+      document.getElementById(`num-${id}`).style.color      = color;
+    });
+
+    const total   = sofa.total ?? 0;
+    const delta   = trend.delta ?? 0;
+    const base    = trend.baseline ?? "--";
+    const tColor  = total >= 6 ? "var(--red)" : total >= 3 ? "var(--yellow)" : "var(--green)";
+
+    document.getElementById("sofa-total").textContent  = total;
+    document.getElementById("sofa-total").style.color  = tColor;
+    document.getElementById("sofa-delta-label").textContent =
+      base !== "--" ? `baseline ${base}  ·  delta ${delta >= 0 ? "+" : ""}${delta}` : "establishing baseline...";
+  }
+
+  // ── Badge ───────────────────────────────────────────────────────────────────
+  function updateBadge(status, acked) {
+    const el  = document.getElementById("status-badge");
+    if (acked) {
+      el.className = "badge badge-yellow";
+      el.innerHTML = `<span class="badge-dot dot-yellow"></span> Acknowledged`;
+    } else if (status === "red") {
+      el.className = "badge badge-red";
+      el.innerHTML = `<span class="badge-dot dot-red"></span> Sepsis Alert`;
+    } else if (status === "yellow") {
+      el.className = "badge badge-yellow";
+      el.innerHTML = `<span class="badge-dot dot-yellow"></span> Deteriorating`;
+    } else {
+      el.className = "badge badge-green";
+      el.innerHTML = `<span class="badge-dot dot-green"></span> Stable`;
+    }
+  }
+
+  // ── Alert banner ────────────────────────────────────────────────────────────
+  function updateAlertBanner(status, acked, sofa, trend) {
+    const banner = document.getElementById("alert-banner");
+    const btn    = document.getElementById("ack-btn");
+
+    if (acked) {
+      banner.className = "amber";
+      document.getElementById("alert-title").style.color = "var(--amber)";
+      document.getElementById("alert-title").textContent = "Alert Acknowledged";
+      document.getElementById("alert-sub").textContent   = `SOFA ${sofa.total} · RPi buzzer silenced · LED blinking amber`;
+      btn.textContent  = "Acknowledged";
+      btn.disabled     = true;
+      btn.className    = "btn btn-amber";
+    } else if (status === "red") {
+      banner.className = "red";
+      document.getElementById("alert-title").style.color = "var(--red)";
+      document.getElementById("alert-title").textContent = "SEPSIS ALERT";
+      document.getElementById("alert-sub").textContent   =
+        `SOFA ${sofa.total} · delta +${trend.delta} · threshold exceeded`;
+      btn.textContent  = "Acknowledge";
+      btn.disabled     = false;
+      btn.className    = "btn btn-red";
+    } else {
+      banner.className = "";
+    }
+  }
+
+  // ── Trend chart ─────────────────────────────────────────────────────────────
+  function updateChart(history) {
+    const wrap   = document.getElementById("sofa-chart");
+    wrap.innerHTML = "";
+    if (!history.length) return;
+
+    const maxVal = Math.max(...history.map(h => h.sofa_total), 4);
+
+    history.forEach(h => {
+      const pct   = Math.max(4, (h.sofa_total / maxVal) * 100);
+      const color = h.status === "red" ? "var(--red)" : h.status === "yellow" ? "var(--yellow)" : "var(--green)";
+      const bar   = document.createElement("div");
+      bar.className = "chart-bar";
+      bar.style.height     = `${pct}%`;
+      bar.style.background = color;
+      bar.title            = `Reading ${h.reading_num}: SOFA ${h.sofa_total}`;
+      wrap.appendChild(bar);
+    });
+  }
+
+  // ── Alert log ───────────────────────────────────────────────────────────────
+  function renderLog() {
+    const el = document.getElementById("alert-log");
+    if (!alertLog.length) {
+      el.innerHTML = `<div class="log-empty">No alerts yet</div>`;
+      return;
+    }
+    el.innerHTML = alertLog.map(a => `
+      <div class="log-row">
+        <span class="log-time">${a.time}</span>
+        <span class="log-msg" style="color:${a.status === 'red' ? 'var(--red)' : 'var(--muted)'}">${a.msg}</span>
+        <span class="badge ${a.acked ? 'badge-muted' : 'badge-red'}">${a.acked ? 'acknowledged' : 'active'}</span>
+      </div>
+    `).join("");
+  }
+
+  // ── Override ────────────────────────────────────────────────────────────────
+  async function injectOverride() {
+    const patch = {
+      spo2:       parseFloat(document.getElementById("sl-spo2").value),
+      heart_rate: parseFloat(document.getElementById("sl-hr").value),
+      resp_rate:  parseFloat(document.getElementById("sl-rr").value),
+      sbp:        parseFloat(document.getElementById("sl-sbp").value),
+    };
+
+    const statusEl = document.getElementById("inject-status");
+
+    try {
+      const res = await fetch("/api/override", {
+        method:  "POST",
+        headers: {"Content-Type": "application/json"},
+        body:    JSON.stringify(patch),
+      });
+      const data = await res.json();
+      statusEl.style.color   = "var(--green)";
+      statusEl.textContent   = "Override queued — applies on next reading";
+      setTimeout(() => statusEl.textContent = "", 3000);
+    } catch (e) {
+      statusEl.style.color = "var(--red)";
+      statusEl.textContent = "Failed to send override";
+    }
+  }
+
+  // ── Acknowledge ─────────────────────────────────────────────────────────────
+  async function acknowledge() {
+    try {
+      await fetch("/api/acknowledge", { method: "POST" });
+    } catch (e) {
+      console.error("Acknowledge failed", e);
+    }
+  }
+</script>
+
+</body>
+</html>
